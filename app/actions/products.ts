@@ -3,30 +3,23 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { db } from '@/lib/db';
-import { products, productSources, productVariants } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { upsertProduct, deleteProduct as deleteProductUtil, getProductById } from '@/lib/products';
+import { upsertVariant } from '@/lib/variants';
 
 export type ProductFormData = {
   title: string;
   description?: string;
-  productType: 'POD' | 'DROPSHIP' | 'OWN';
+  type: 'OWN' | 'POD' | 'DIGITAL';
   status: 'DRAFT' | 'READY';
   defaultImageUrl?: string;
-  // Source fields
-  provider?: string;
-  providerSku?: string;
-  externalSupplierUrl?: string;
-  leadTimeDays?: number;
-  inventoryQty?: number;
-  weightG?: number;
+  weightGrams?: number;
   // Variants
   variants: Array<{
     id?: string;
     sku?: string;
     optionsJson?: string;
-    costCents: number;
-    priceCents: number;
+    costCents?: number;
+    priceCents?: number;
   }>;
 };
 
@@ -41,63 +34,55 @@ export async function createProduct(formData: ProductFormData) {
     throw new Error('Title is required');
   }
 
-  // Type-specific validation
-  if (formData.productType === 'DROPSHIP' && !formData.externalSupplierUrl) {
-    throw new Error('Supplier URL required for dropship products');
-  }
-
-  if (formData.productType === 'OWN' && (formData.inventoryQty == null || formData.inventoryQty < 0)) {
-    throw new Error('Inventory quantity required for own products');
-  }
-
   // Ensure at least one variant
   if (!formData.variants || formData.variants.length === 0) {
     throw new Error('At least one variant is required');
   }
 
   try {
-    // Create product
-    const [product] = await db
-      .insert(products)
-      .values({
-        userId: session.user.id,
+    // Create product using utility
+    console.log('Creating product with data:', {
+      title: formData.title,
+      type: formData.type,
+      status: formData.status,
+    });
+    
+    const product = await upsertProduct(
+      {
         title: formData.title,
-        description: formData.description || null,
-        productType: formData.productType,
+        description: formData.description,
+        type: formData.type,
         status: formData.status,
-        defaultImageUrl: formData.defaultImageUrl || null,
-      })
-      .returning();
+        defaultImageUrl: formData.defaultImageUrl,
+        weightGrams: formData.weightGrams,
+      },
+      session.user.id
+    );
 
-    // Create source if needed
-    if (formData.productType === 'POD' || formData.productType === 'DROPSHIP' || formData.productType === 'OWN') {
-      await db.insert(productSources).values({
-        productId: product.id,
-        provider: formData.provider || null,
-        providerSku: formData.providerSku || null,
-        externalSupplierUrl: formData.externalSupplierUrl || null,
-        leadTimeDays: formData.leadTimeDays || null,
-        inventoryQty: formData.inventoryQty || null,
-        weightG: formData.weightG || null,
-      });
-    }
+    console.log('Product created:', product.id);
 
     // Create variants
     for (const variant of formData.variants) {
-      await db.insert(productVariants).values({
-        productId: product.id,
-        sku: variant.sku || null,
-        optionsJson: variant.optionsJson || null,
-        costCents: variant.costCents,
-        priceCents: variant.priceCents,
-      });
+      console.log('Creating variant:', variant);
+      await upsertVariant(
+        product.id,
+        {
+          sku: variant.sku,
+          optionsJson: variant.optionsJson,
+          costCents: variant.costCents,
+          priceCents: variant.priceCents,
+        },
+        session.user.id
+      );
     }
 
+    console.log('Product and variants created successfully');
     revalidatePath('/dashboard/products');
     return { success: true, productId: product.id };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create product error:', error);
-    throw new Error('Failed to create product');
+    console.error('Error details:', error.message, error.stack);
+    throw new Error(error.message || 'Failed to create product');
   }
 }
 
@@ -107,28 +92,9 @@ export async function updateProduct(productId: string, formData: ProductFormData
     throw new Error('Unauthorized');
   }
 
-  // Verify ownership
-  const [existingProduct] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, productId))
-    .limit(1);
-
-  if (!existingProduct || existingProduct.userId !== session.user.id) {
-    throw new Error('Product not found or unauthorized');
-  }
-
   // Validate
   if (!formData.title) {
     throw new Error('Title is required');
-  }
-
-  if (formData.productType === 'DROPSHIP' && !formData.externalSupplierUrl) {
-    throw new Error('Supplier URL required for dropship products');
-  }
-
-  if (formData.productType === 'OWN' && (formData.inventoryQty == null || formData.inventoryQty < 0)) {
-    throw new Error('Inventory quantity required for own products');
   }
 
   if (!formData.variants || formData.variants.length === 0) {
@@ -136,61 +102,33 @@ export async function updateProduct(productId: string, formData: ProductFormData
   }
 
   try {
-    // Update product
-    await db
-      .update(products)
-      .set({
+    // Update product using utility
+    await upsertProduct(
+      {
+        id: productId,
         title: formData.title,
-        description: formData.description || null,
-        productType: formData.productType,
+        description: formData.description,
+        type: formData.type,
         status: formData.status,
-        defaultImageUrl: formData.defaultImageUrl || null,
-        updatedAt: new Date(),
-      })
-      .where(eq(products.id, productId));
+        defaultImageUrl: formData.defaultImageUrl,
+        weightGrams: formData.weightGrams,
+      },
+      session.user.id
+    );
 
-    // Update or create source
-    const [existingSource] = await db
-      .select()
-      .from(productSources)
-      .where(eq(productSources.productId, productId))
-      .limit(1);
-
-    if (existingSource) {
-      await db
-        .update(productSources)
-        .set({
-          provider: formData.provider || null,
-          providerSku: formData.providerSku || null,
-          externalSupplierUrl: formData.externalSupplierUrl || null,
-          leadTimeDays: formData.leadTimeDays || null,
-          inventoryQty: formData.inventoryQty || null,
-          weightG: formData.weightG || null,
-        })
-        .where(eq(productSources.id, existingSource.id));
-    } else {
-      await db.insert(productSources).values({
-        productId: productId,
-        provider: formData.provider || null,
-        providerSku: formData.providerSku || null,
-        externalSupplierUrl: formData.externalSupplierUrl || null,
-        leadTimeDays: formData.leadTimeDays || null,
-        inventoryQty: formData.inventoryQty || null,
-        weightG: formData.weightG || null,
-      });
-    }
-
-    // Delete existing variants and recreate (simple approach for MVP)
-    await db.delete(productVariants).where(eq(productVariants.productId, productId));
-
+    // Update variants (simplified - in production you'd handle updates better)
     for (const variant of formData.variants) {
-      await db.insert(productVariants).values({
-        productId: productId,
-        sku: variant.sku || null,
-        optionsJson: variant.optionsJson || null,
-        costCents: variant.costCents,
-        priceCents: variant.priceCents,
-      });
+      await upsertVariant(
+        productId,
+        {
+          id: variant.id,
+          sku: variant.sku,
+          optionsJson: variant.optionsJson,
+          costCents: variant.costCents,
+          priceCents: variant.priceCents,
+        },
+        session.user.id
+      );
     }
 
     revalidatePath('/dashboard/products');
@@ -208,20 +146,9 @@ export async function deleteProduct(productId: string) {
     throw new Error('Unauthorized');
   }
 
-  // Verify ownership
-  const [existingProduct] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, productId))
-    .limit(1);
-
-  if (!existingProduct || existingProduct.userId !== session.user.id) {
-    throw new Error('Product not found or unauthorized');
-  }
-
   try {
-    // Delete product (cascade will handle variants and sources)
-    await db.delete(products).where(eq(products.id, productId));
+    // Soft delete using utility
+    await deleteProductUtil(productId, session.user.id);
 
     revalidatePath('/dashboard/products');
     return { success: true };
@@ -237,65 +164,41 @@ export async function duplicateProduct(productId: string) {
     throw new Error('Unauthorized');
   }
 
-  // Get existing product
-  const [existingProduct] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, productId))
-    .limit(1);
-
-  if (!existingProduct || existingProduct.userId !== session.user.id) {
-    throw new Error('Product not found or unauthorized');
-  }
-
   try {
-    // Get source and variants
-    const [source] = await db
-      .select()
-      .from(productSources)
-      .where(eq(productSources.productId, productId))
-      .limit(1);
-
-    const variants = await db
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.productId, productId));
-
-    // Create duplicate
-    const [newProduct] = await db
-      .insert(products)
-      .values({
-        userId: session.user.id,
-        title: `${existingProduct.title} (Copy)`,
-        description: existingProduct.description,
-        productType: existingProduct.productType,
-        status: 'DRAFT', // Always set to draft
-        defaultImageUrl: existingProduct.defaultImageUrl,
-      })
-      .returning();
-
-    // Duplicate source
-    if (source) {
-      await db.insert(productSources).values({
-        productId: newProduct.id,
-        provider: source.provider,
-        providerSku: source.providerSku,
-        externalSupplierUrl: source.externalSupplierUrl,
-        leadTimeDays: source.leadTimeDays,
-        inventoryQty: source.inventoryQty,
-        weightG: source.weightG,
-      });
+    // Get existing product with relations
+    const existingProduct = await getProductById(productId, session.user.id);
+    
+    if (!existingProduct) {
+      throw new Error('Product not found');
     }
 
+    // Create duplicate
+    const newProduct = await upsertProduct(
+      {
+        title: `${existingProduct.title} (Copy)`,
+        description: existingProduct.description || undefined,
+        type: existingProduct.type,
+        status: 'DRAFT', // Always set to draft
+        defaultImageUrl: existingProduct.defaultImageUrl || undefined,
+        weightGrams: existingProduct.weightGrams || undefined,
+      },
+      session.user.id
+    );
+
     // Duplicate variants
-    for (const variant of variants) {
-      await db.insert(productVariants).values({
-        productId: newProduct.id,
-        sku: variant.sku,
-        optionsJson: variant.optionsJson,
-        costCents: variant.costCents,
-        priceCents: variant.priceCents,
-      });
+    if (existingProduct.variants) {
+      for (const variant of existingProduct.variants) {
+        await upsertVariant(
+          newProduct.id,
+          {
+            sku: variant.sku || undefined,
+            optionsJson: variant.optionsJson || undefined,
+            costCents: variant.costCents || undefined,
+            priceCents: variant.priceCents || undefined,
+          },
+          session.user.id
+        );
+      }
     }
 
     revalidatePath('/dashboard/products');

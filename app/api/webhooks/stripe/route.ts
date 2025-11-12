@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { updateAccountStatus } from '@/lib/payouts';
 import { db } from '@/lib/db';
-import { orders, pendingOrders, stores } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { orders, pendingOrders, stores, products, productSources } from '@/lib/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import Stripe from 'stripe';
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -137,6 +137,29 @@ export async function POST(req: NextRequest) {
 
         // Delete pending order
         await db.delete(pendingOrders).where(eq(pendingOrders.stripeSessionId, session.id));
+
+        // Decrement inventory for OWN products
+        const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+        
+        if (product && product.productType === 'OWN') {
+          // Get product source to decrement inventory
+          const [source] = await db
+            .select()
+            .from(productSources)
+            .where(eq(productSources.productId, productId))
+            .limit(1);
+
+          if (source && source.inventoryQty && source.inventoryQty > 0) {
+            await db
+              .update(productSources)
+              .set({
+                inventoryQty: sql`${productSources.inventoryQty} - 1`,
+              })
+              .where(eq(productSources.productId, productId));
+
+            console.log('[Webhook] Inventory decremented for product:', productId);
+          }
+        }
 
         console.log('[Webhook] Order created successfully:', {
           sessionId: session.id,

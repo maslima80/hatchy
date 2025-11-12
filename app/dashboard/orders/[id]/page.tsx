@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
+import { OrderNotesForm } from './components/OrderNotesForm';
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
   const session = await getSession();
@@ -118,7 +119,17 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               {order.stripePaymentIntentId && (
                 <div>
                   <p className="text-sm text-gray-600">Payment Intent ID</p>
-                  <p className="text-xs font-mono text-gray-700">{order.stripePaymentIntentId}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-mono text-gray-700">{order.stripePaymentIntentId}</p>
+                    <a
+                      href={`https://dashboard.stripe.com/${order.stripeAccountId}/payments/${order.stripePaymentIntentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                 </div>
               )}
               <div>
@@ -147,16 +158,14 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         </CardContent>
       </Card>
 
-      {/* Notes Section (Future Enhancement) */}
+      {/* Notes Section */}
       <Card>
         <CardHeader>
           <CardTitle>Order Notes</CardTitle>
-          <CardDescription>Add internal notes about this order (coming soon)</CardDescription>
+          <CardDescription>Add internal notes about this order</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
-            Order notes feature will be available in a future update.
-          </div>
+          <OrderNotesForm orderId={order.id} initialNotes={order.notes || ''} />
         </CardContent>
       </Card>
     </div>

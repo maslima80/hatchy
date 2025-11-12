@@ -1,71 +1,26 @@
 import { db } from '@/lib/db';
-import { stores, storeProducts, products, storePrices, payoutAccounts, pendingOrders, productVariants } from '@/lib/db/schema';
+import { stores, products, payoutAccounts, pendingOrders } from '@/lib/db/schema';
 import { stripe } from '@/lib/stripe';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { getStorefrontPrice as getPriceFromLib } from '@/lib/pricing';
 
-export async function getStorefrontPrice({ storeId, productId }: { storeId: string; productId: string }) {
-  // Get store product relationship
-  const [storeProduct] = await db
-    .select()
-    .from(storeProducts)
-    .where(and(eq(storeProducts.storeId, storeId), eq(storeProducts.productId, productId)))
-    .limit(1);
-
-  if (!storeProduct) {
-    throw new Error('Product not found in store');
+// Re-export the pricing function for backward compatibility
+export async function getStorefrontPrice({ 
+  storeId, 
+  productId,
+  variantId 
+}: { 
+  storeId: string; 
+  productId: string;
+  variantId?: string;
+}) {
+  const price = await getPriceFromLib({ storeId, productId, variantId });
+  
+  if (!price) {
+    throw new Error('Product price not configured or product is not visible in this store.');
   }
-
-  // Get price from store_prices (Phase 5 pricebook)
-  const [priceOverride] = await db
-    .select()
-    .from(storePrices)
-    .where(eq(storePrices.storeProductId, storeProduct.id))
-    .limit(1);
-
-  // If no store price, try to get default from product variant
-  let priceCents = priceOverride?.priceCents || 0;
-  let currency = priceOverride?.currency || 'usd';
-
-  // If still no price, try product variant default
-  if (priceCents <= 0) {
-    const [variant] = await db
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.productId, productId))
-      .limit(1);
-    
-    if (variant && variant.priceCents > 0) {
-      priceCents = variant.priceCents;
-      // currency stays as 'usd' default
-    }
-  }
-
-  // Validate price > 0
-  if (priceCents <= 0) {
-    throw new Error('Product price not configured. Please set a price in the store pricing page.');
-  }
-
-  // Check visibility if store price exists
-  if (priceOverride) {
-    const now = new Date();
-    if (priceOverride.visibility === 'HIDDEN') {
-      throw new Error('Product is not available');
-    }
-
-    if (priceOverride.visibility === 'SCHEDULED') {
-      if (!priceOverride.startAt || !priceOverride.endAt) {
-        throw new Error('Product is not available');
-      }
-      if (now < priceOverride.startAt || now > priceOverride.endAt) {
-        throw new Error('Product is not available');
-      }
-    }
-  }
-
-  return {
-    priceCents,
-    currency,
-  };
+  
+  return price;
 }
 
 export async function getConnectedAccountIdForStore(storeId: string): Promise<string> {
@@ -162,7 +117,7 @@ export async function createCheckoutSession({
           },
         },
       ],
-      success_url: `${baseUrl}/s/${store.slug}?success=1&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${baseUrl}/s/${store.slug}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/s/${store.slug}?canceled=1`,
       metadata: {
         storeId,

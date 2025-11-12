@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { stores, storeProducts, products, productVariants, storePrices } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { stores, storeProducts, products, variants, storePrices } from '@/lib/db/schema';
+import { eq, and, isNull } from 'drizzle-orm';
 
 export type StoreFormData = {
   name: string;
@@ -61,7 +61,11 @@ export async function createStore(formData: StoreFormData) {
   const userProducts = await db
     .select()
     .from(products)
-    .where(and(eq(products.userId, session.user.id), eq(products.status, 'READY')));
+    .where(and(
+      eq(products.userId, session.user.id), 
+      eq(products.status, 'READY'),
+      isNull(products.deletedAt)
+    ));
 
   const userProductIds = userProducts.map((p) => p.id);
   const invalidProducts = formData.productIds.filter((id) => !userProductIds.includes(id));
@@ -101,19 +105,21 @@ export async function createStore(formData: StoreFormData) {
       // Get product's first variant price as default
       const [firstVariant] = await db
         .select()
-        .from(productVariants)
-        .where(eq(productVariants.productId, productId))
+        .from(variants)
+        .where(and(
+          eq(variants.productId, productId),
+          isNull(variants.deletedAt)
+        ))
         .limit(1);
 
-      if (firstVariant) {
+      if (firstVariant && firstVariant.priceCents) {
         // Create initial store price (inherits from product)
         await db.insert(storePrices).values({
-          storeProductId: storeProduct.id,
+          storeId: store.id,
+          productId: productId,
           variantId: null, // Base price, not variant-specific
           priceCents: firstVariant.priceCents,
-          compareAtCents: null,
           currency: 'USD',
-          visibility: 'VISIBLE',
         });
       }
     }
@@ -173,7 +179,11 @@ export async function updateStore(storeId: string, formData: StoreFormData) {
   const userProducts = await db
     .select()
     .from(products)
-    .where(and(eq(products.userId, session.user.id), eq(products.status, 'READY')));
+    .where(and(
+      eq(products.userId, session.user.id), 
+      eq(products.status, 'READY'),
+      isNull(products.deletedAt)
+    ));
 
   const userProductIds = userProducts.map((p) => p.id);
   const invalidProducts = formData.productIds.filter((id) => !userProductIds.includes(id));
@@ -215,18 +225,20 @@ export async function updateStore(storeId: string, formData: StoreFormData) {
       // Get product's first variant price as default
       const [firstVariant] = await db
         .select()
-        .from(productVariants)
-        .where(eq(productVariants.productId, productId))
+        .from(variants)
+        .where(and(
+          eq(variants.productId, productId),
+          isNull(variants.deletedAt)
+        ))
         .limit(1);
 
-      if (firstVariant) {
+      if (firstVariant && firstVariant.priceCents) {
         await db.insert(storePrices).values({
-          storeProductId: storeProduct.id,
+          storeId: storeId,
+          productId: productId,
           variantId: null,
           priceCents: firstVariant.priceCents,
-          compareAtCents: null,
           currency: 'USD',
-          visibility: 'VISIBLE',
         });
       }
     }

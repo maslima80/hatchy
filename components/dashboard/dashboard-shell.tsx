@@ -4,13 +4,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
-import { Home, ShoppingBag, Store, Package, Settings, Menu, X, LogOut } from 'lucide-react';
+import { Home, ShoppingBag, Store, Package, Settings, Menu, X, LogOut, FolderTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Home', href: '/dashboard', icon: Home },
   { name: 'Products', href: '/dashboard/products', icon: ShoppingBag },
+  { name: 'Organization', href: '/dashboard/organization', icon: FolderTree },
   { name: 'Stores', href: '/dashboard/stores', icon: Store },
   { name: 'Orders', href: '/dashboard/orders', icon: Package },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },

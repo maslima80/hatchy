@@ -57,6 +57,20 @@
       "when": 1762937143460,
       "tag": "0007_absurd_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1762942871860,
+      "tag": "0008_normal_hardball",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1762946692500,
+      "tag": "0009_typical_sentinels",
+      "breakpoints": true
     }
   ]
 }

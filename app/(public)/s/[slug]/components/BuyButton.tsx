@@ -45,7 +45,18 @@ export function BuyButton({ storeId, productId, quantity = 1, size = 'lg', class
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
+        // Show user-friendly error messages
+        let errorMessage = data.error || 'Failed to create checkout session';
+        
+        if (errorMessage.includes('price not configured') || errorMessage.includes('price ≤ 0')) {
+          errorMessage = 'This product is not available for purchase at this time. Please contact the seller.';
+        } else if (errorMessage.includes('payouts not configured') || errorMessage.includes('cannot accept payments')) {
+          errorMessage = 'The seller has not set up payments yet. Please contact them directly.';
+        } else if (errorMessage.includes('not available')) {
+          errorMessage = 'This product is currently unavailable.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       // Redirect to Stripe Checkout

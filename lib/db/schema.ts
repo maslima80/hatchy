@@ -1,6 +1,9 @@
-import { pgTable, text, timestamp, uuid, boolean, integer, serial, varchar, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, boolean, integer, varchar, pgEnum, unique, index } from 'drizzle-orm/pg-core';
 
-// Users table - for authentication
+// ============================================================================
+// USERS & PROFILES
+// ============================================================================
+
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull().unique(),
@@ -9,66 +12,149 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Profiles table - one per user, stores onboarding data
 export const profiles = pgTable('profiles', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  name: text('name'), // User's name
-  country: text('country'), // For currency defaults and Stripe
-  currency: text('currency'), // Default currency based on country
-  contactEmail: text('contact_email'), // Primary contact
-  whatsapp: text('whatsapp'), // WhatsApp number
-  phone: text('phone'), // Phone number
+  name: text('name'),
+  country: text('country'),
+  currency: text('currency'),
+  contactEmail: text('contact_email'),
+  whatsapp: text('whatsapp'),
+  phone: text('phone'),
   onboardingCompleted: boolean('onboarding_completed').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Product enums
-export const productTypeEnum = pgEnum('product_type', ['POD', 'DROPSHIP', 'OWN']);
-export const productStatusEnum = pgEnum('product_status', ['DRAFT', 'READY']);
+// ============================================================================
+// PRODUCTS V2 - Complete Rebuild
+// ============================================================================
 
-// Store enums
-export const storeTypeEnum = pgEnum('store_type', ['HOTSITE', 'MINISTORE']);
-export const storeStatusEnum = pgEnum('store_status', ['DRAFT', 'LIVE']);
-export const storeProductVisibilityEnum = pgEnum('store_product_visibility', ['VISIBLE', 'HIDDEN']);
-export const visibilityStatusEnum = pgEnum('visibility_status', ['VISIBLE', 'HIDDEN', 'SCHEDULED']);
+export const productTypeEnum = pgEnum('product_type_v2', ['OWN', 'POD', 'DIGITAL']);
+export const productStatusEnum = pgEnum('product_status_v2', ['DRAFT', 'READY']);
 
-// Products table - main product data
-export const products = pgTable('products', {
+// Brands table (for Product Manager v3)
+export const brands = pgTable('brands', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  slug: varchar('slug', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdSlugUnique: unique('brands_user_id_slug_unique').on(table.userId, table.slug),
+  userIdIdx: index('brands_user_id_idx').on(table.userId),
+}));
+
+// Main products table
+export const products = pgTable('products_v2', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 200 }).notNull(),
   description: text('description'),
-  productType: productTypeEnum('product_type').default('OWN').notNull(),
+  type: productTypeEnum('type').default('OWN').notNull(),
   status: productStatusEnum('status').default('DRAFT').notNull(),
   defaultImageUrl: text('default_image_url'),
+  weightGrams: integer('weight_grams'),
+  // Product Manager v3 fields
+  youtubeUrl: text('youtube_url'),
+  compareAtPriceCents: integer('compare_at_price_cents'),
+  unit: varchar('unit', { length: 50 }).default('Unit'),
+  trackInventory: boolean('track_inventory').default(false),
+  quantity: integer('quantity').default(0),
+  personalizationEnabled: boolean('personalization_enabled').default(false),
+  personalizationPrompt: text('personalization_prompt'),
+  brandId: uuid('brand_id').references(() => brands.id, { onDelete: 'set null' }),
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'), // Soft delete
+}, (table) => ({
+  userIdStatusIdx: index('products_v2_user_id_status_idx').on(table.userId, table.status),
+  brandIdIdx: index('products_v2_brand_id_idx').on(table.brandId),
+}));
+
+// Product variants
+export const variants = pgTable('variants', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  sku: varchar('sku', { length: 100 }),
+  optionsJson: text('options_json'), // e.g., {"size":"M","color":"Red"}
+  costCents: integer('cost_cents'), // Nullable - not all products have cost
+  priceCents: integer('price_cents'), // Optional base price (store_prices override)
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
+}, (table) => ({
+  productIdSkuUnique: unique('variants_product_id_sku_unique').on(table.productId, table.sku),
+}));
+
+// Product media (images, videos)
+export const productMedia = pgTable('product_media', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  variantId: uuid('variant_id').references(() => variants.id, { onDelete: 'cascade' }), // Nullable - can be product-level
+  url: text('url').notNull(),
+  alt: text('alt'),
+  position: integer('position').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Categories
+export const categories = pgTable('categories', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  slug: varchar('slug', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdSlugUnique: unique('categories_user_id_slug_unique').on(table.userId, table.slug),
+}));
+
+// Product-Category join
+export const productCategories = pgTable('product_categories', {
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  categoryId: uuid('category_id').notNull().references(() => categories.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: unique('product_categories_pk').on(table.productId, table.categoryId),
+}));
+
+// Tags
+export const tags = pgTable('tags', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  slug: varchar('slug', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdSlugUnique: unique('tags_user_id_slug_unique').on(table.userId, table.slug),
+}));
+
+// Product-Tag join
+export const productTags = pgTable('product_tags', {
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  tagId: uuid('tag_id').notNull().references(() => tags.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: unique('product_tags_pk').on(table.productId, table.tagId),
+}));
+
+// External links (for POD - Printify integration)
+export const externalLinks = pgTable('external_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 50 }).notNull(), // 'printify'
+  externalProductId: text('external_product_id').notNull(),
+  metadataJson: text('metadata_json'), // Store any extra data
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Product sources - type-specific data (POD/Dropship/Own)
-export const productSources = pgTable('product_sources', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
-  provider: varchar('provider', { length: 100 }),
-  providerSku: varchar('provider_sku', { length: 100 }),
-  externalSupplierUrl: text('external_supplier_url'),
-  leadTimeDays: integer('lead_time_days'),
-  inventoryQty: integer('inventory_qty'),
-  weightG: integer('weight_g'),
-});
+// ============================================================================
+// STORES
+// ============================================================================
 
-// Product variants - SKU, options, pricing
-export const productVariants = pgTable('product_variants', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
-  sku: varchar('sku', { length: 100 }),
-  optionsJson: text('options_json'), // JSON string of { size, color, etc. }
-  costCents: integer('cost_cents').default(0).notNull(),
-  priceCents: integer('price_cents').default(0).notNull(),
-});
+export const storeTypeEnum = pgEnum('store_type', ['HOTSITE', 'MINISTORE']);
+export const storeStatusEnum = pgEnum('store_status', ['DRAFT', 'LIVE']);
+export const storeProductVisibilityEnum = pgEnum('store_product_visibility_v2', ['VISIBLE', 'HIDDEN']);
 
-// Stores table - user's micro-stores
 export const stores = pgTable('stores', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -83,31 +169,40 @@ export const stores = pgTable('stores', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Store products - products attached to stores
-export const storeProducts = pgTable('store_products', {
+// Store products - products attached to stores with overrides
+export const storeProducts = pgTable('store_products_v2', {
   id: uuid('id').defaultRandom().primaryKey(),
   storeId: uuid('store_id').notNull().references(() => stores.id, { onDelete: 'cascade' }),
   productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  titleOverride: text('title_override'), // Per-store title override
+  descriptionOverride: text('description_override'), // Per-store description override
+  visibility: storeProductVisibilityEnum('visibility').default('HIDDEN').notNull(),
   position: integer('position').default(0).notNull(),
-  visibility: storeProductVisibilityEnum('visibility').default('VISIBLE').notNull(),
-});
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  storeIdProductIdUnique: unique('store_products_v2_store_product_unique').on(table.storeId, table.productId),
+  storeIdIdx: index('store_products_v2_store_id_idx').on(table.storeId),
+}));
 
-// Store prices - per-store pricing overrides
-export const storePrices = pgTable('store_prices', {
+// Store prices - per-store, per-variant pricing
+export const storePrices = pgTable('store_prices_v2', {
   id: uuid('id').defaultRandom().primaryKey(),
-  storeProductId: uuid('store_product_id').notNull().references(() => storeProducts.id, { onDelete: 'cascade' }),
-  variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'cascade' }),
+  storeId: uuid('store_id').notNull().references(() => stores.id, { onDelete: 'cascade' }),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  variantId: uuid('variant_id').references(() => variants.id, { onDelete: 'cascade' }), // Nullable - base product price
   priceCents: integer('price_cents').notNull(),
-  compareAtCents: integer('compare_at_cents'),
-  currency: text('currency').default('USD').notNull(),
-  visibility: visibilityStatusEnum('visibility').default('VISIBLE').notNull(),
-  startAt: timestamp('start_at'),
-  endAt: timestamp('end_at'),
+  currency: varchar('currency', { length: 3 }).default('USD').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  storeProductVariantUnique: unique('store_prices_v2_unique').on(table.storeId, table.productId, table.variantId),
+  storeIdIdx: index('store_prices_v2_store_id_idx').on(table.storeId),
+}));
 
-// Payout accounts - Stripe Connect accounts
+// ============================================================================
+// STRIPE & ORDERS
+// ============================================================================
+
 export const payoutAccounts = pgTable('payout_accounts', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
@@ -122,10 +217,8 @@ export const payoutAccounts = pgTable('payout_accounts', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Order enums
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'paid', 'failed']);
 
-// Orders - completed purchases
 export const orders = pgTable('orders', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -138,11 +231,11 @@ export const orders = pgTable('orders', {
   currency: text('currency').notNull(),
   customerEmail: text('customer_email'),
   status: orderStatusEnum('status').default('pending').notNull(),
+  notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// Pending orders - track sessions before webhook
 export const pendingOrders = pgTable('pending_orders', {
   id: uuid('id').defaultRandom().primaryKey(),
   storeId: uuid('store_id').notNull().references(() => stores.id, { onDelete: 'cascade' }),

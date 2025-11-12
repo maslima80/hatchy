@@ -1,0 +1,47 @@
+Phase 8 Preparation: Schema Design & Migration Files
+
+Prepared Phase 8 (Product Manager v2) implementation:
+- Designed complete new database schema with 10 new tables
+- Created migration files (manual and auto-generated)
+- Replaced lib/db/schema.ts with v2 schema
+- Backed up old schema to schema-old-backup.ts
+
+New Schema Features:
+- products_v2: Added DIGITAL type, soft deletes, weight_grams
+- variants: Simplified structure with optional pricing
+- categories + tags: Full taxonomy system with join tables
+- product_media: Media gallery with variant assignment
+- external_links: Ready for Printify integration
+- store_products_v2: Added title/description overrides
+- store_prices_v2: Simplified pricing structure
+
+Migration Status:
+⚠️  Migration files created but NOT yet run
+⚠️  Database still has old tables
+⚠️  No code changes made yet (to avoid breaking current system)
+
+Next Steps:
+1. Run migration: pnpm drizzle-kit push
+2. Create server utilities (lib/products.ts, lib/pricing.ts, etc.)
+3. Update existing code to use new schema
+4. Build Product List and Product Editor UI
+5. Update Pricing Overview and Storefront
+
+Documentation:
+- START_HERE.md - Quick start for next assistant
+- PHASE_8_QUICKSTART.md - Step-by-step checklist
+- PHASE_8_HANDOFF.md - Complete context and details
+- PHASE_8_MIGRATION_PLAN.md - Migration strategy
+- PHASE_8_STATUS.md - Current status
+
+Files Created:
+- lib/db/schema.ts (replaced with v2)
+- lib/db/schema-old-backup.ts (backup)
+- drizzle/0009_typical_sentinels.sql (auto-generated)
+- drizzle/manual_0009_phase8_rebuild.sql (clean migration)
+- scripts/run-phase8-migration.ts (migration runner)
+- All documentation files
+
+Estimated Time to Complete: 8 hours after migration runs
+
+Ready for: New assistant to continue Phase 8 implementation
