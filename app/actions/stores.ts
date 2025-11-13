@@ -112,22 +112,30 @@ export async function createStore(formData: StoreFormData) {
         ))
         .limit(1);
 
-      if (firstVariant && firstVariant.priceCents) {
-        // Create initial store price (inherits from product)
-        await db.insert(storePrices).values({
-          storeId: store.id,
-          productId: productId,
-          variantId: null, // Base price, not variant-specific
-          priceCents: firstVariant.priceCents,
-          currency: 'USD',
-        });
+      if (!firstVariant || !firstVariant.priceCents) {
+        // Product has no price set - throw error
+        const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+        throw new Error(`Product "${product?.title || 'Unknown'}" has no price set. Please set prices in the product editor before adding to store.`);
       }
+
+      // Create initial store price (inherits from product)
+      await db.insert(storePrices).values({
+        storeId: store.id,
+        productId: productId,
+        variantId: null, // Base price, not variant-specific
+        priceCents: firstVariant.priceCents,
+        currency: 'USD',
+      });
     }
 
     revalidatePath('/dashboard/stores');
     return { success: true, storeId: store.id, slug: store.slug };
   } catch (error) {
     console.error('Create store error:', error);
+    // Re-throw if it's our custom error message
+    if (error instanceof Error && error.message.includes('has no price set')) {
+      throw error;
+    }
     throw new Error('Failed to create store');
   }
 }
@@ -232,15 +240,19 @@ export async function updateStore(storeId: string, formData: StoreFormData) {
         ))
         .limit(1);
 
-      if (firstVariant && firstVariant.priceCents) {
-        await db.insert(storePrices).values({
-          storeId: storeId,
-          productId: productId,
-          variantId: null,
-          priceCents: firstVariant.priceCents,
-          currency: 'USD',
-        });
+      if (!firstVariant || !firstVariant.priceCents) {
+        // Product has no price set - throw error
+        const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
+        throw new Error(`Product "${product?.title || 'Unknown'}" has no price set. Please set prices in the product editor before adding to store.`);
       }
+
+      await db.insert(storePrices).values({
+        storeId: storeId,
+        productId: productId,
+        variantId: null,
+        priceCents: firstVariant.priceCents,
+        currency: 'USD',
+      });
     }
 
     revalidatePath('/dashboard/stores');
@@ -249,6 +261,10 @@ export async function updateStore(storeId: string, formData: StoreFormData) {
     return { success: true };
   } catch (error) {
     console.error('Update store error:', error);
+    // Re-throw if it's our custom error message
+    if (error instanceof Error && error.message.includes('has no price set')) {
+      throw error;
+    }
     throw new Error('Failed to update store');
   }
 }
