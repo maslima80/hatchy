@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ShoppingBag, Plus, Edit } from 'lucide-react';
 import { ProductActions } from './components/ProductActions';
-import { ProductFilters } from './components/ProductFilters';
 
 type SearchParams = {
   status?: 'DRAFT' | 'READY';
@@ -19,9 +18,10 @@ type SearchParams = {
 export default async function ProductsPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   const session = await getSession();
+  const params = await searchParams;
   
   // Build query conditions
   const conditions = [
@@ -29,12 +29,12 @@ export default async function ProductsPage({
     isNull(products.deletedAt),
   ];
 
-  if (searchParams.status) {
-    conditions.push(eq(products.status, searchParams.status));
+  if (params.status) {
+    conditions.push(eq(products.status, params.status));
   }
 
-  if (searchParams.type) {
-    conditions.push(eq(products.type, searchParams.type));
+  if (params.type) {
+    conditions.push(eq(products.type, params.type));
   }
 
   // Fetch products for this user
@@ -45,8 +45,8 @@ export default async function ProductsPage({
     .orderBy(desc(products.updatedAt));
 
   // Apply search filter
-  if (searchParams.search) {
-    const searchLower = searchParams.search.toLowerCase();
+  if (params.search) {
+    const searchLower = params.search.toLowerCase();
     userProducts = userProducts.filter(
       (p) =>
         p.title.toLowerCase().includes(searchLower) ||
@@ -131,16 +131,20 @@ export default async function ProductsPage({
           <h1 className="text-3xl font-bold text-[#111]">Products</h1>
           <p className="text-gray-600 mt-1">Manage your product catalog</p>
         </div>
-        <Link href="/dashboard/products/new">
-          <Button>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Product
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/dashboard/products/import/printify">
+            <Button variant="outline">
+              Import from Printify
+            </Button>
+          </Link>
+          <Link href="/dashboard/products/new">
+            <Button>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Product
+            </Button>
+          </Link>
+        </div>
       </div>
-
-      {/* Filters */}
-      <ProductFilters />
 
       {!hasProducts ? (
         /* Empty State */
@@ -206,13 +210,13 @@ export default async function ProductsPage({
                       </Badge>
                     </td>
                     <td className="p-4">
-                      {(variantCounts[product.id] || 0) <= 1 ? (
+                      {!product.variationsEnabled ? (
                         <Badge variant="outline" className="text-xs">
                           Simple
                         </Badge>
                       ) : (
                         <span className="text-gray-600">
-                          {variantCounts[product.id]} variants
+                          {variantCounts[product.id] || 0} variants
                         </span>
                       )}
                     </td>

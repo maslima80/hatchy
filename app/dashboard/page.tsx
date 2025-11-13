@@ -136,9 +136,14 @@ export default async function DashboardPage() {
                   <p className="text-sm text-gray-600 mb-2">
                     Upload photos, set your price, and describe what you're selling.
                   </p>
-                  <Link href="/dashboard/products/new">
-                    <Button size="sm">Add Product</Button>
-                  </Link>
+                  <div className="flex gap-2">
+                    <Link href="/dashboard/products/new">
+                      <Button size="sm">Add Product</Button>
+                    </Link>
+                    <Link href="/dashboard/products/import/printify">
+                      <Button size="sm" variant="outline">Import from Printify</Button>
+                    </Link>
+                  </div>
                 </div>
               </div>
 

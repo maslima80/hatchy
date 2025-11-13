@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { COUNTRIES } from '@/lib/currency';
 import { PayoutsCard } from './components/PayoutsCard';
+import { PrintifyIntegration } from './components/PrintifyIntegration';
 
 export default async function SettingsPage() {
   const session = await getSession();
@@ -28,6 +29,9 @@ export default async function SettingsPage() {
 
       {/* Payouts */}
       <PayoutsCard account={payoutAccount || null} />
+
+      {/* Printify Integration */}
+      <PrintifyIntegration />
 
       {/* Personal Information */}
       <Card>
