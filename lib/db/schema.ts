@@ -63,6 +63,12 @@ export const products = pgTable('products_v2', {
   personalizationEnabled: boolean('personalization_enabled').default(false),
   personalizationPrompt: text('personalization_prompt'),
   brandId: uuid('brand_id').references(() => brands.id, { onDelete: 'set null' }),
+  // Variant Engine
+  variationsEnabled: boolean('variations_enabled').default(false),
+  // Printify Integration (Phase 9)
+  source: text('source').default('manual'), // 'manual' | 'printify' | 'dropshipping' | 'digital'
+  externalId: text('external_id'), // External provider product ID
+  externalProvider: text('external_provider'), // e.g., 'printify'
   // Timestamps
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -77,14 +83,48 @@ export const variants = pgTable('variants', {
   id: uuid('id').defaultRandom().primaryKey(),
   productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
   sku: varchar('sku', { length: 100 }),
-  optionsJson: text('options_json'), // e.g., {"size":"M","color":"Red"}
+  optionsJson: text('options_json'), // Legacy - for backwards compatibility
+  optionValuesJson: text('option_values_json'), // New format: {"Size":"M","Color":"Red"}
+  optionValuesHash: text('option_values_hash'), // SHA256 hash for uniqueness constraint
   costCents: integer('cost_cents'), // Nullable - not all products have cost
   priceCents: integer('price_cents'), // Optional base price (store_prices override)
+  stock: integer('stock'), // Inventory count
+  imageUrl: text('image_url'), // Variant-specific image
+  // Printify Integration (Phase 9)
+  externalId: text('external_id'), // External provider variant ID
+  externalProvider: text('external_provider'), // e.g., 'printify'
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   deletedAt: timestamp('deleted_at'),
 }, (table) => ({
   productIdSkuUnique: unique('variants_product_id_sku_unique').on(table.productId, table.sku),
+  productIdIdx: index('variants_product_id_idx').on(table.productId),
+}));
+
+// Product options (e.g., Size, Color)
+export const productOptions = pgTable('product_options', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(), // e.g., "Size", "Color"
+  position: integer('position').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  productIdNameUnique: unique('product_options_product_id_name_unique').on(table.productId, table.name),
+  productIdIdx: index('product_options_product_id_idx').on(table.productId),
+}));
+
+// Product option values (e.g., Small, Medium, Large)
+export const productOptionValues = pgTable('product_option_values', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  optionId: uuid('option_id').notNull().references(() => productOptions.id, { onDelete: 'cascade' }),
+  value: varchar('value', { length: 100 }).notNull(), // e.g., "Small", "Red"
+  position: integer('position').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  optionIdValueUnique: unique('product_option_values_option_id_value_unique').on(table.optionId, table.value),
+  optionIdIdx: index('product_option_values_option_id_idx').on(table.optionId),
 }));
 
 // Product media (images, videos)
@@ -235,6 +275,25 @@ export const orders = pgTable('orders', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// ============================================================================
+// PRINTIFY INTEGRATION (Phase 9)
+// ============================================================================
+
+export const printifyConnections = pgTable('printify_connections', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }).unique(),
+  apiKey: text('api_key').notNull(), // TODO: Encrypt in production
+  defaultShopId: text('default_shop_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index('printify_connections_user_id_idx').on(table.userId),
+}));
+
+// ============================================================================
+// ORDERS
+// ============================================================================
 
 export const pendingOrders = pgTable('pending_orders', {
   id: uuid('id').defaultRandom().primaryKey(),

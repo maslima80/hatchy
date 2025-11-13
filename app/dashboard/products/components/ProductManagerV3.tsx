@@ -16,6 +16,7 @@ import {
 import type { ProductWithRelations } from '@/lib/products';
 import { ImageKitUploader } from './ImageKitUploader';
 import { OrganizationCombobox } from './OrganizationCombobox';
+import { VariationsTab } from './variants/VariationsTab';
 
 interface ProductManagerV3Props {
   product?: ProductWithRelations;
@@ -283,9 +284,19 @@ export function ProductManagerV3({
               <CardTitle className="flex items-center gap-2">
                 <Package className="w-5 h-5" />
                 Basic Information
+                {product?.source === 'printify' && (
+                  <Badge variant="outline" className="ml-2">
+                    Printify
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>
                 Essential product details that customers will see
+                {product?.externalId && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    (ID: {product.externalId})
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -510,29 +521,41 @@ export function ProductManagerV3({
           {/* Product Variations */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Palette className="w-5 h-5" />
-                    Product Variations
-                  </CardTitle>
-                  <CardDescription>
-                    Add size, color, or other variations
-                  </CardDescription>
-                </div>
-                <Switch
-                  checked={formData.variationsEnabled}
-                  onCheckedChange={(checked) => setFormData({ ...formData, variationsEnabled: checked })}
-                />
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="w-5 h-5" />
+                Product Variations
+              </CardTitle>
+              <CardDescription>
+                Create options like Size, Color, Material, etc.
+              </CardDescription>
             </CardHeader>
-            {formData.variationsEnabled && (
-              <CardContent>
+            <CardContent>
+              {product?.id ? (
+                <VariationsTab
+                  productId={product.id}
+                  variationsEnabled={formData.variationsEnabled}
+                  onVariationsEnabledChange={async (enabled) => {
+                    setFormData({ ...formData, variationsEnabled: enabled });
+                    // Auto-save the variations_enabled flag
+                    if (product?.id) {
+                      try {
+                        await fetch(`/api/products/${product.id}/save-v3`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ variationsEnabled: enabled }),
+                        });
+                      } catch (error) {
+                        console.error('Failed to save variations_enabled:', error);
+                      }
+                    }
+                  }}
+                />
+              ) : (
                 <p className="text-sm text-gray-500 text-center py-8">
-                  Variant matrix builder coming soon...
+                  Save the product first to enable variations
                 </p>
-              </CardContent>
-            )}
+              )}
+            </CardContent>
           </Card>
 
           {/* Personalization Options */}

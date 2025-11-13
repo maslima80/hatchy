@@ -234,3 +234,73 @@ export async function canSetVisible(
   const price = await getStorefrontPrice({ storeId, productId, variantId });
   return price !== null && price.priceCents > 0;
 }
+
+/**
+ * Resolve product price with variant fallback logic (Phase 8.1)
+ * 1. Try variant-specific store price
+ * 2. Fallback to product-level store price
+ * 3. Fallback to variant base price
+ * 4. Return null if no price found
+ */
+export async function resolveProductPrice(
+  productId: string,
+  storeId: string,
+  variantId?: string
+): Promise<number | null> {
+  // 1. Try variant-specific store price
+  if (variantId) {
+    const [variantPrice] = await db
+      .select()
+      .from(storePrices)
+      .where(
+        and(
+          eq(storePrices.storeId, storeId),
+          eq(storePrices.productId, productId),
+          eq(storePrices.variantId, variantId)
+        )
+      )
+      .limit(1);
+    
+    if (variantPrice && variantPrice.priceCents > 0) {
+      return variantPrice.priceCents;
+    }
+  }
+  
+  // 2. Fallback to product-level store price
+  const [productPrice] = await db
+    .select()
+    .from(storePrices)
+    .where(
+      and(
+        eq(storePrices.storeId, storeId),
+        eq(storePrices.productId, productId),
+        isNull(storePrices.variantId)
+      )
+    )
+    .limit(1);
+  
+  if (productPrice && productPrice.priceCents > 0) {
+    return productPrice.priceCents;
+  }
+  
+  // 3. Fallback to variant base price (if variant specified)
+  if (variantId) {
+    const [variant] = await db
+      .select()
+      .from(variants)
+      .where(
+        and(
+          eq(variants.id, variantId),
+          isNull(variants.deletedAt)
+        )
+      )
+      .limit(1);
+    
+    if (variant && variant.priceCents && variant.priceCents > 0) {
+      return variant.priceCents;
+    }
+  }
+  
+  // 4. No price found
+  return null;
+}

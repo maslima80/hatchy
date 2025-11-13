@@ -46,6 +46,7 @@ export async function PATCH(
         personalizationEnabled: body.personalizationEnabled || false,
         personalizationPrompt: body.personalizationPrompt || null,
         brandId: body.brandId || null,
+        variationsEnabled: body.variationsEnabled !== undefined ? body.variationsEnabled : existing.variationsEnabled,
         updatedAt: new Date(),
       })
       .where(eq(products.id, id));
@@ -60,8 +61,13 @@ export async function PATCH(
       await attachTagsToProduct(id, body.tagIds, session.user.id);
     }
 
-    // Update default variant pricing if provided
-    if (body.priceCents !== undefined || body.sku !== undefined) {
+    // Update default variant pricing if provided (only for simple products)
+    // Skip if variations are enabled - variants are managed separately
+    const variationsEnabled = body.variationsEnabled !== undefined 
+      ? body.variationsEnabled 
+      : existing.variationsEnabled;
+    
+    if (!variationsEnabled && (body.priceCents !== undefined || body.sku !== undefined)) {
       const [defaultVariant] = await db
         .select()
         .from(variants)

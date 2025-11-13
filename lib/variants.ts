@@ -3,6 +3,19 @@ import { variants, products } from './db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { assertBelongsToUser } from './products';
 
+// Re-export client-safe utilities
+export {
+  generateVariantCombinations,
+  formatOptionValues,
+  generateVariantSKU,
+  areOptionValuesEqual,
+  type ProductOption,
+} from './variants-client';
+
+// ============================================================================
+// DATABASE OPERATIONS
+// ============================================================================
+
 /**
  * Get all variants for a product
  */
