@@ -7,9 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { BuyButton } from './components/BuyButton';
 import { Suspense } from 'react';
 
-export default async function PublicStorePage({ params }: { params: { slug: string } }) {
+export default async function PublicStorePage({ params }: { params: Promise<{ slug: string }> }) {
+  // Await params (Next.js 15 requirement)
+  const { slug } = await params;
+  
   // Fetch store
-  const [store] = await db.select().from(stores).where(eq(stores.slug, params.slug)).limit(1);
+  const [store] = await db.select().from(stores).where(eq(stores.slug, slug)).limit(1);
 
   if (!store) {
     notFound();
@@ -26,29 +29,19 @@ export default async function PublicStorePage({ params }: { params: { slug: stri
     })
     .from(storeProducts)
     .innerJoin(products, eq(storeProducts.productId, products.id))
-    .leftJoin(storePrices, eq(storePrices.storeProductId, storeProducts.id))
+    .leftJoin(storePrices, eq(storePrices.productId, products.id))
     .where(eq(storeProducts.storeId, store.id))
     .orderBy(storeProducts.position);
 
-  // Filter visible products based on visibility and schedule
+  // Filter visible products (only show products with prices set)
   const visibleProducts = storeProductsList.filter((item) => {
+    // Must have a price set for this store
     if (!item.storePrice) return false;
+    
+    // Check visibility from store_products
+    if (item.storeProduct.visibility === 'HIDDEN') return false;
 
-    const visibility = item.storePrice.visibility;
-
-    if (visibility === 'HIDDEN') return false;
-
-    if (visibility === 'SCHEDULED') {
-      // Check if within schedule window
-      const startAt = item.storePrice.startAt;
-      const endAt = item.storePrice.endAt;
-
-      if (!startAt || !endAt) return false;
-
-      return now >= startAt && now <= endAt;
-    }
-
-    return true; // VISIBLE
+    return true;
   });
 
   const storeProductsData = visibleProducts.map((sp) => sp.product);
@@ -58,7 +51,7 @@ export default async function PublicStorePage({ params }: { params: { slug: stri
     if (item.storePrice) {
       productPrices[item.product.id] = {
         price: item.storePrice.priceCents,
-        compareAt: item.storePrice.compareAtCents || undefined,
+        compareAt: item.product.compareAtPriceCents || undefined,
       };
     }
   }
@@ -115,7 +108,7 @@ export default async function PublicStorePage({ params }: { params: { slug: stri
             {/* Product Details */}
             <div className="flex flex-col justify-center space-y-6">
               <div>
-                <Badge className="mb-4">{product.productType}</Badge>
+                <Badge className="mb-4">{product.type}</Badge>
                 <h2 className="text-4xl font-bold text-gray-900 mb-4">{product.title}</h2>
                 {product.description && <p className="text-lg text-gray-600 leading-relaxed">{product.description}</p>}
               </div>
@@ -192,7 +185,7 @@ export default async function PublicStorePage({ params }: { params: { slug: stri
                 )}
                 <div className="p-6 space-y-4">
                   <div>
-                    <Badge className="mb-2">{product.productType}</Badge>
+                    <Badge className="mb-2">{product.type}</Badge>
                     <h3 className="text-xl font-bold text-gray-900">{product.title}</h3>
                     {product.description && (
                       <p className="text-gray-600 text-sm mt-2 line-clamp-2">{product.description}</p>
